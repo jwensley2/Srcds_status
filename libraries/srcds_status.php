@@ -86,14 +86,14 @@ class Srcds_status {
 			$server->mapname 		= $this->get_string($response);
 			$server->game_dir		= $this->get_string($response);
 			$server->game			= $this->get_string($response);
-			$server->app_id		= $this->get_short_unsigned($response);
+			$server->app_id			= $this->get_short_unsigned($response);
 			$server->players 		= $this->get_byte($response);
 			$server->max_players 	= $this->get_byte($response);
 			$server->bots 			= $this->get_byte($response);
-			$server->dedicated 	= $this->get_char($response);
-			$server->os			= $this->get_char($response);
+			$server->dedicated 		= $this->get_char($response);
+			$server->os				= $this->get_char($response);
 			$server->password		= $this->get_byte($response);
-			$server->secure		= $this->get_byte($response);
+			$server->secure			= $this->get_byte($response);
 			$server->version		= $this->get_string($response);
 			
 			return $server;
