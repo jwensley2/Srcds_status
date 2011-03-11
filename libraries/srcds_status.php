@@ -132,7 +132,7 @@ class Srcds_status {
 	 * @return mixed
 	 * @author Joseph Wensley
 	 */
-	public function get_players($host, $port = '27015', $sort_type = NULL)
+	public function get_players($host, $port = '27015', $sort_type = NULL, $sort = NULL)
 	{	
 		// Open a socket to the server
 		$socket = fsockopen('udp://'.$host, $port, $err_num, $err_str, $this->timeout);
@@ -169,44 +169,98 @@ class Srcds_status {
 			}
 		}
 		
-
+		if($sort_type)
+		{
+			$players = $this->sort_players((array)$players, $sort_type, $sort);
+		}
 		
 		return $players;
 	}
 
-	public function sort_players($players, $sort_type = 'kills')
+	/**
+	 * Sort Players
+	 *
+	 * Sorts players by kills or name in either descing or ascending order
+	 * 
+	 * @param string $players 
+	 * @param string $sort_type 
+	 * @param string $sort 
+	 * @return object
+	 * @author Joseph Wensley
+	 */
+	public function sort_players($players, $sort_type = 'kills', $sort = 'desc')
 	{
-		usort($players, array(__CLASS__, 'sort_players_cmp'));
-		
-		return $players;
-	}
-
-	private function sort_players_cmp($a, $b)
-	{
-		switch ($this->sort_type)
+		switch ($sort_type)
 		{
 			case 'kills':
-				if($a->kills == $b->kills){ return 0; }
-				if($a->kills > $b->kills)
-				{
-					return 1;
-				}
-				else
-				{
-					return -1;
+				switch ($sort) {
+					case 'asc':
+						usort($players, array(__CLASS__, 'sort_players_by_kills_asc'));
+						break;
+					default:
+						usort($players, array(__CLASS__, 'sort_players_by_kills_desc'));
+						break;
 				}
 				break;
-			
 			case 'name':
-				return strcmp($b->name, $a->name);
+				switch ($sort) {
+					case 'asc':
+						usort($players, array(__CLASS__, 'sort_players_by_name_asc'));
+						break;
+					default:
+						usort($players, array(__CLASS__, 'sort_players_by_name_desc'));
+						break;
+				}
 				break;
-			
-			default:
-				return 0;
-				break;
+		}
+		
+		return (object)$players;
+	}
+
+	
+	/**
+	 * Sorting methods for use with usort()
+	 */
+	private function sort_players_by_kills_asc($a, $b)
+	{
+		if($a->kills == $b->kills){ return 0; }
+		if($a->kills > $b->kills)
+		{
+			return 1;
+		}
+		else
+		{
+			return -1;
+		}
+	}
+
+	private function sort_players_by_kills_desc($a, $b)
+	{
+		if($a->kills == $b->kills){ return 0; }
+		if($a->kills < $b->kills)
+		{
+			return 1;
+		}
+		else
+		{
+			return -1;
 		}
 	}
 	
+	private function sort_players_by_name_asc($a, $b)
+	{
+		return strcasecmp($a->name, $b->name);
+	}
+	
+	private function sort_players_by_name_desc($a, $b)
+	{
+		return strcasecmp($b->name, $a->name);
+	}
+	
+	/**
+	 * These functions unpack the binary data
+	 * recieved from the server into usable strings/numbers
+	 */
 	private function get_char(&$string)
 	{
 		return chr($this->get_byte($string));
