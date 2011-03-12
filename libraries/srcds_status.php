@@ -171,7 +171,7 @@ class Srcds_status {
 		
 		if($sort_type)
 		{
-			$players = $this->sort_players((array)$players, $sort_type, $sort);
+			$players = $this->sort_players($players, $sort_type, $sort);
 		}
 		
 		return $players;
@@ -190,6 +190,8 @@ class Srcds_status {
 	 */
 	public function sort_players($players, $sort_type = 'kills', $sort = 'desc')
 	{
+		$players = (array)$players;
+		
 		switch ($sort_type)
 		{
 			case 'kills':
@@ -212,6 +214,17 @@ class Srcds_status {
 						break;
 				}
 				break;
+				
+			case 'time':
+				switch ($sort) {
+					case 'asc':
+						usort($players, array(__CLASS__, 'sort_players_by_time_asc'));
+						break;
+					default:
+						usort($players, array(__CLASS__, 'sort_players_by_time_desc'));
+						break;
+				}
+				break;
 		}
 		
 		return (object)$players;
@@ -223,28 +236,12 @@ class Srcds_status {
 	 */
 	private function sort_players_by_kills_asc($a, $b)
 	{
-		if($a->kills == $b->kills){ return 0; }
-		if($a->kills > $b->kills)
-		{
-			return 1;
-		}
-		else
-		{
-			return -1;
-		}
+		return $a->kills - $b->kills;
 	}
 
 	private function sort_players_by_kills_desc($a, $b)
 	{
-		if($a->kills == $b->kills){ return 0; }
-		if($a->kills < $b->kills)
-		{
-			return 1;
-		}
-		else
-		{
-			return -1;
-		}
+		return $b->kills - $a->kills;
 	}
 	
 	private function sort_players_by_name_asc($a, $b)
@@ -255,6 +252,16 @@ class Srcds_status {
 	private function sort_players_by_name_desc($a, $b)
 	{
 		return strcasecmp($b->name, $a->name);
+	}
+	
+	private function sort_players_by_time_asc($a, $b)
+	{
+		return $a->time - $b->time;
+	}
+	
+	private function sort_players_by_time_desc($a, $b)
+	{
+		return $b->time - $a->time;
 	}
 	
 	/**
