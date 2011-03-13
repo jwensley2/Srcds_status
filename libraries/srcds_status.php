@@ -42,6 +42,15 @@ class Srcds_status {
 	function __construct()
 	{
 		log_message('debug', 'Srcds_status library loaded');
+		
+		// Get a reference to the CodeIgniter super object
+		$this->CI =& get_instance();
+		
+		// Load the caching driver
+		if($this->CI->config->item('srcds_enable_cache') === TRUE)
+		{
+			$this->CI->load->driver('cache', array('adapter' => 'apc', 'backup' => 'file'));
+		}
 	}
 	
 	/**
@@ -54,6 +63,11 @@ class Srcds_status {
 	 */
 	public function ping($host, $port = '27015')
 	{
+		if($server = $this->read_cache($host, $port, __METHOD__))
+		{
+			return $server;
+		}
+		
 		// Open a socket to the server and set the timeout
 		$socket = fsockopen('udp://'.$host, $port, $err_num, $err_str);
 		stream_set_timeout($socket, $this->ping_timeout);
@@ -69,14 +83,16 @@ class Srcds_status {
 
 		if(empty($response))
 		{
-			return FALSE; // No response
+			$ping = FALSE; // No response
 		}
 		else
 		{
 			$ping = number_format(($end_time - $start_time) * 1000, 2); // Calculate the ping to the server in milliseconds
-			return $ping; // Return the ping time
 		}
 		
+		$this->write_cache($host, $port, __METHOD__, $ping, 1);
+		
+		return $ping;
 	}
 	
 	/**
@@ -89,6 +105,11 @@ class Srcds_status {
 	 */
 	public function get_status($host, $port = '27015')
 	{
+		if($server = $this->read_cache($host, $port, __METHOD__))
+		{
+			return $server;
+		}
+		
 		$server = new StdClass();
 	
 		// Open a socket to the server and set the timeout
@@ -120,6 +141,8 @@ class Srcds_status {
 			return $server;
 		}
 		
+		$this->write_cache($host, $port, __METHOD__, $server);
+		
 		return FALSE;
 	}
 	
@@ -134,6 +157,12 @@ class Srcds_status {
 	 */
 	public function get_players($host, $port = '27015', $sort_type = NULL, $sort = NULL)
 	{	
+		
+		if($players = $this->read_cache($host, $port, __METHOD__))
+		{
+			return $players;
+		}
+		
 		// Open a socket to the server
 		$socket = fsockopen('udp://'.$host, $port, $err_num, $err_str, $this->timeout);
 		stream_set_timeout($socket, $this->timeout);
@@ -174,9 +203,30 @@ class Srcds_status {
 			$players = $this->sort_players($players, $sort_type, $sort);
 		}
 		
+		$this->write_cache($host, $port, __METHOD__, $players);
+		
 		return $players;
 	}
-
+	
+	private function write_cache($host, $port, $method, $data, $ttl = NULL)
+	{
+		if($this->CI->config->item('srcds_enable_cache') === TRUE AND $this->CI->config->item('srcds_cache_time') > 0)
+		{
+			if( ! $ttl) { $ttl = $this->CI->config->item('srcds_cache_time'); }
+			$key = $host.$port.$method;
+			$this->CI->cache->apc->save($key, $data, $ttl);
+		}
+	}
+	
+	private function read_cache($host, $port, $method)
+	{
+		if($this->CI->config->item('srcds_enable_cache') === TRUE AND $this->CI->config->item('srcds_cache_time') > 0)
+		{
+			$key = $host.$port.$method;
+			return $this->CI->cache->apc->get($key);
+		}
+	}
+	
 	/**
 	 * Sort Players
 	 *
