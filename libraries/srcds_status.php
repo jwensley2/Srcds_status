@@ -30,8 +30,12 @@
 class Srcds_status {
 
 	// Socket timeouts
-	private $timeout		= 2;
-	private $ping_timeout	= 1;
+	private $timeout					= 2;
+	private $ping_timeout				= 1;
+	private $srcds_enable_cache			= TRUE;
+	private $srcds_cache_bad_responses	= TRUE;
+	private $srcds_cache_time			= 30;
+
 	
 	// http://developer.valvesoftware.com/wiki/Server_queries
 	const PACKET_SIZE					= 1248;
@@ -42,6 +46,26 @@ class Srcds_status {
 	function __construct()
 	{
 		log_message('debug', 'Srcds_status library loaded');
+		
+		// Get a reference to the CodeIgniter super object
+		$this->CI =& get_instance();
+		
+		// Load the caching driver
+		if ($this->srcds_enable_cache === TRUE)
+		{
+			$this->CI->load->driver('cache', array('adapter' => 'apc', 'backup' => 'file'));
+		}
+	}
+	
+	public function initialize($config = array())
+	{
+		foreach ($config as $key => $value)
+		{
+			if (isset($this->$key))
+			{
+				$this->$key = $value;
+			}
+		}
 	}
 	
 	/**
@@ -54,6 +78,12 @@ class Srcds_status {
 	 */
 	public function ping($host, $port = '27015')
 	{
+		if (($cache = $this->read_cache($host, $port, __METHOD__)) !== FALSE)
+		{
+			if ($cache === 'FALSE') { return FALSE; } 
+			return $cache;
+		}
+		
 		// Open a socket to the server and set the timeout
 		$socket = fsockopen('udp://'.$host, $port, $err_num, $err_str);
 		stream_set_timeout($socket, $this->ping_timeout);
@@ -67,16 +97,19 @@ class Srcds_status {
 
 		$end_time = microtime(TRUE);
 
-		if(empty($response))
+		if (empty($response))
 		{
+			$this->write_cache($host, $port, __METHOD__, 'FALSE', 1);
 			return FALSE; // No response
 		}
 		else
 		{
+			
 			$ping = number_format(($end_time - $start_time) * 1000, 2); // Calculate the ping to the server in milliseconds
-			return $ping; // Return the ping time
+			$this->write_cache($host, $port, __METHOD__, $ping, 1);
+			
+			return $ping;
 		}
-		
 	}
 	
 	/**
@@ -89,6 +122,12 @@ class Srcds_status {
 	 */
 	public function get_status($host, $port = '27015')
 	{
+		if (($cache = $this->read_cache($host, $port, __METHOD__)) !== FALSE)
+		{
+			if ($cache === 'FALSE') { return FALSE; } 
+			return $cache;
+		}
+		
 		$server = new StdClass();
 	
 		// Open a socket to the server and set the timeout
@@ -101,7 +140,7 @@ class Srcds_status {
 		$response = fread($socket, self::PACKET_SIZE);
 		$response = substr($response, 6);
 
-		if(!empty($response))
+		if ( ! empty($response))
 		{
 			$server->hostname 		= $this->get_string($response);
 			$server->mapname 		= $this->get_string($response);
@@ -117,9 +156,11 @@ class Srcds_status {
 			$server->secure			= $this->get_byte($response);
 			$server->version		= $this->get_string($response);
 			
+			$this->write_cache($host, $port, __METHOD__, $server);
 			return $server;
 		}
 		
+		$this->write_cache($host, $port, __METHOD__, 'FALSE');
 		return FALSE;
 	}
 	
@@ -134,6 +175,13 @@ class Srcds_status {
 	 */
 	public function get_players($host, $port = '27015', $sort_type = NULL, $sort = NULL)
 	{	
+		
+		if (($cache = $this->read_cache($host, $port, __METHOD__)) !== FALSE)
+		{
+			if ($cache === 'FALSE') { return FALSE; } 
+			return $cache;
+		}
+		
 		// Open a socket to the server
 		$socket = fsockopen('udp://'.$host, $port, $err_num, $err_str, $this->timeout);
 		stream_set_timeout($socket, $this->timeout);
@@ -145,6 +193,12 @@ class Srcds_status {
 		fread($socket, 5);
 		$challenge = fread($socket, 4);
 		
+		if (empty($challenge))
+		{
+			$this->write_cache($host, $port, __METHOD__, 'FALSE');
+			return FALSE;
+		}
+		
 		// Send the command to get the player list
 		$command = self::A2S_PLAYER.$challenge;
 		fwrite($socket, $command);
@@ -154,29 +208,80 @@ class Srcds_status {
 		
 		fclose($socket);
 		
-		$players = new StdClass();
-		if(ord(substr($response, 0, 1)) === 0)
+		if ( ! empty($response))
 		{
-			$id = 0;
-			while($response !== false){
-				$this->get_byte($response); // First byte is supposed to be an id but seems to always be 0
-				
-				$players->$id->name		= $this->get_string($response);
-				$players->$id->kills	= $this->get_long($response);
-				$players->$id->time		= $this->get_float($response);
-				
-				$id++;
+			$players = new StdClass();
+			if (ord(substr($response, 0, 1)) === 0)
+			{
+				$id = 0;
+				while($response !== false){
+					$this->get_byte($response); // First byte is supposed to be an id but seems to always be 0
+
+					$players->$id->name		= $this->get_string($response);
+					$players->$id->kills	= $this->get_long($response);
+					$players->$id->time		= $this->get_float($response);
+
+					$id++;
+				}
+			}
+
+			if ($sort_type)
+			{
+				$players = $this->sort_players($players, $sort_type, $sort);
+			}
+			
+			$this->write_cache($host, $port, __METHOD__, $players);
+			return $players;
+		}
+		
+		$this->write_cache($host, $port, __METHOD__, 'FALSE');
+		return FALSE;
+	}
+	
+	/**
+	 * Write server responses to the cache if enabled
+	 *
+	 * @param string $host 
+	 * @param string $port 
+	 * @param string $method 
+	 * @param string $data 
+	 * @param int $ttl 
+	 * @return void
+	 * @author Joseph Wensley
+	 */
+	private function write_cache($host, $port, $method, $data, $ttl = NULL)
+	{
+		if ($data !== 'FALSE' OR ($data === 'FALSE' AND $this->srcds_cache_bad_responses !== FALSE))
+		{
+			if ($this->srcds_enable_cache === TRUE AND $this->srcds_cache_time > 0)
+			{
+				if ( ! $ttl) { $ttl = $this->srcds_cache_time; }
+				$key = $host.$port.$method;
+
+				$this->CI->cache->save($key, $data, $ttl);
 			}
 		}
-		
-		if($sort_type)
-		{
-			$players = $this->sort_players($players, $sort_type, $sort);
-		}
-		
-		return $players;
 	}
-
+	
+	/**
+	 * Read server responses from the cache if enabled
+	 *
+	 * @param string $host 
+	 * @param string $port 
+	 * @param string $method 
+	 * @return void
+	 * @author Joseph Wensley
+	 */
+	private function read_cache($host, $port, $method)
+	{
+		if ($this->srcds_enable_cache === TRUE AND $this->srcds_cache_time > 0)
+		{
+			$key = $host.$port.$method;
+			
+			return $this->CI->cache->get($key);
+		}
+	}
+	
 	/**
 	 * Sort Players
 	 *
@@ -190,6 +295,8 @@ class Srcds_status {
 	 */
 	public function sort_players($players, $sort_type = 'kills', $sort = 'desc')
 	{
+		if ( ! $players){ return FALSE; }
+		
 		$players = (array)$players;
 		
 		switch ($sort_type)
@@ -335,4 +442,4 @@ class Srcds_status {
 }
 
 /* End of file Srcds_status.php */
-/* Location: ./application/libraries/Srcds_status.php */
+/* Location: ./sparks/scrds_status/Srcds_status.php */
