@@ -30,11 +30,11 @@
 class Srcds_status {
 
 	// Socket timeouts
-	private $timeout					= 2;
-	private $ping_timeout				= 1;
-	private $srcds_enable_cache			= TRUE;
-	private $srcds_cache_bad_responses	= TRUE;
-	private $srcds_cache_time			= 30;
+	private $timeout				= 2;
+	private $ping_timeout			= 1;
+	private $enable_cache			= TRUE;
+	private $cache_bad_responses	= TRUE;
+	private $cache_time				= 30;
 
 	
 	// http://developer.valvesoftware.com/wiki/Server_queries
@@ -51,7 +51,7 @@ class Srcds_status {
 		$this->CI =& get_instance();
 		
 		// Load the caching driver
-		if ($this->srcds_enable_cache === TRUE)
+		if ($this->enable_cache === TRUE)
 		{
 			$this->CI->load->driver('cache', array('adapter' => 'apc', 'backup' => 'file'));
 		}
@@ -251,11 +251,11 @@ class Srcds_status {
 	 */
 	private function write_cache($host, $port, $method, $data, $ttl = NULL)
 	{
-		if ($data !== 'FALSE' OR ($data === 'FALSE' AND $this->srcds_cache_bad_responses !== FALSE))
+		if ($data !== 'FALSE' OR ($data === 'FALSE' AND $this->enable_cache !== FALSE))
 		{
-			if ($this->srcds_enable_cache === TRUE AND $this->srcds_cache_time > 0)
+			if ($this->enable_cache === TRUE AND $this->cache_time > 0)
 			{
-				if ( ! $ttl) { $ttl = $this->srcds_cache_time; }
+				if ( ! $ttl) { $ttl = $this->cache_time; }
 				$key = $host.$port.$method;
 
 				$this->CI->cache->save($key, $data, $ttl);
@@ -274,7 +274,7 @@ class Srcds_status {
 	 */
 	private function read_cache($host, $port, $method)
 	{
-		if ($this->srcds_enable_cache === TRUE AND $this->srcds_cache_time > 0)
+		if ($this->enable_cache === TRUE AND $this->cache_time > 0)
 		{
 			$key = $host.$port.$method;
 			
