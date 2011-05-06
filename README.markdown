@@ -1,15 +1,32 @@
 Usage
-======================
+=====
 
-To ping the server
+Initialize Configuration
+------------------------
+You can alter the default config values by passing an array of options to the initialize method
+
+	$config = array(
+		$timeout				= 2;
+		$ping_timeout			= 1;
+		$enable_cache			= TRUE; // Enable caching
+		$cache_bad_responses	= TRUE; // Should we cache invalid reponses (timeouts/errors)
+		$cache_time				= 30; // Time to cache server responses for
+	)
+	$this->srcds_stats->initialize($config);
+
+Pinging a Server
+----------------
+The ping method lets you quickly check to see if a server is responding
 	
 	// function ping($host, $port = '27015');
 	$ping = $this->srcds_status->ping('127.0.0.1');
 	echo $ping // Displays the servers ping in milliseconds
 	
 	
-Get the server status and output all the information
-	
+Server Status
+-------------
+You can use this method to get all the information available from a server
+
 	// function get_status($host, $port = '27015')
 	$server = $this->srcds_status->get_status('127.0.0.1');
 	echo $server->hostname;
@@ -27,7 +44,9 @@ Get the server status and output all the information
 	echo $server->version;
 	
 	
-Get the player list and display the information for each player
+Player List
+-----------
+This method lets you retrieve a list of all players on the server and sort them by kills, name or connection time
 
 	// function get_players($host, $port = '27015', $sort_type = NULL, $sort = NULL)
 	$players = $this->srcds_status->get_players('127.0.0.1', '27015', 'kills, 'desc');
@@ -46,4 +65,4 @@ You can also sort the player list using the sort_players() method
 	$players = $this->srcds_status->get_players('127.0.0.1', '27015');
 	$sorted_players = $this->srcds_status->sort_players($players, 'kills', 'asc');
 	
-You can sort by name or kills
+You can sort by name, kills or connection time
