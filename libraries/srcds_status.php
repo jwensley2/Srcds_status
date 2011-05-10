@@ -29,34 +29,39 @@
  */
 class Srcds_status {
 
-	// Socket timeouts
+	// Configuration
 	private $timeout				= 2;
 	private $ping_timeout			= 1;
 	private $enable_cache			= TRUE;
 	private $cache_bad_responses	= TRUE;
 	private $cache_time				= 30;
 
-	
+	const PACKET_SIZE	= 1248;
+
+	// Server query strings
 	// http://developer.valvesoftware.com/wiki/Server_queries
-	const PACKET_SIZE					= 1248;
 	const A2S_INFO						= "\xFF\xFF\xFF\xFFTSource Engine Query\0"; // Get the server info
 	const A2S_SERVERQUERY_GETCHALLENGE	= "\xFF\xFF\xFF\xFF\x55\xFF\xFF\xFF\xFF"; // Get a challenge key
 	const A2S_PLAYER					= "\xFF\xFF\xFF\xFF\x55"; // Get the player list
-	
+
+	// ------------------------------------------------------------------------
+
 	function __construct()
 	{
 		log_message('debug', 'Srcds_status library loaded');
-		
+
 		// Get a reference to the CodeIgniter super object
 		$this->CI =& get_instance();
-		
+
 		// Load the caching driver
 		if ($this->enable_cache === TRUE)
 		{
 			$this->CI->load->driver('cache', array('adapter' => 'apc', 'backup' => 'file'));
 		}
 	}
-	
+
+	// ------------------------------------------------------------------------
+
 	public function initialize($config = array())
 	{
 		foreach ($config as $key => $value)
@@ -67,7 +72,9 @@ class Srcds_status {
 			}
 		}
 	}
-	
+
+	// ------------------------------------------------------------------------
+
 	/**
 	 * Ping the server
 	 *
@@ -80,19 +87,19 @@ class Srcds_status {
 	{
 		if (($cache = $this->read_cache($host, $port, __METHOD__)) !== FALSE)
 		{
-			if ($cache === 'FALSE') { return FALSE; } 
+			if ($cache === 'FALSE') { return FALSE; }
 			return $cache;
 		}
-		
+
 		// Open a socket to the server and set the timeout
 		$socket = fsockopen('udp://'.$host, $port, $err_num, $err_str);
 		stream_set_timeout($socket, $this->ping_timeout);
-		
+
 		$start_time = microtime(TRUE);
-		
+
 		// Send the command to get the player list
 		fwrite($socket, self::A2S_INFO);
-	
+
 		$response = fread($socket, self::PACKET_SIZE); // Read a packet
 
 		$end_time = microtime(TRUE);
@@ -104,14 +111,15 @@ class Srcds_status {
 		}
 		else
 		{
-			
 			$ping = number_format(($end_time - $start_time) * 1000, 2); // Calculate the ping to the server in milliseconds
 			$this->write_cache($host, $port, __METHOD__, $ping, 1);
-			
+
 			return $ping;
 		}
 	}
-	
+
+	// ------------------------------------------------------------------------
+
 	/**
 	 * Get the server info
 	 *
@@ -124,19 +132,19 @@ class Srcds_status {
 	{
 		if (($cache = $this->read_cache($host, $port, __METHOD__)) !== FALSE)
 		{
-			if ($cache === 'FALSE') { return FALSE; } 
+			if ($cache === 'FALSE') { return FALSE; }
 			return $cache;
 		}
-		
+
 		$server = new StdClass();
-	
+
 		// Open a socket to the server and set the timeout
 		$socket = fsockopen('udp://'.$host, $port, $err_num, $err_str);
 		stream_set_timeout($socket, $this->timeout);
-		
+
 		// Send the command to get the player list
 		fwrite($socket, self::A2S_INFO);
-	
+
 		$response = fread($socket, self::PACKET_SIZE);
 		$response = substr($response, 6);
 
@@ -155,15 +163,17 @@ class Srcds_status {
 			$server->password		= $this->get_byte($response);
 			$server->secure			= $this->get_byte($response);
 			$server->version		= $this->get_string($response);
-			
+
 			$this->write_cache($host, $port, __METHOD__, $server);
 			return $server;
 		}
-		
+
 		$this->write_cache($host, $port, __METHOD__, 'FALSE');
 		return FALSE;
 	}
-	
+
+	// ------------------------------------------------------------------------
+
 	/**
 	 * Get a list of the players on the server
 	 *
@@ -174,47 +184,48 @@ class Srcds_status {
 	 * @author Joseph Wensley
 	 */
 	public function get_players($host, $port = '27015', $sort_type = NULL, $sort = NULL)
-	{	
-		
+	{
+
 		if (($cache = $this->read_cache($host, $port, __METHOD__)) !== FALSE)
 		{
-			if ($cache === 'FALSE') { return FALSE; } 
+			if ($cache === 'FALSE') { return FALSE; }
 			return $cache;
 		}
-		
+
 		// Open a socket to the server
 		$socket = fsockopen('udp://'.$host, $port, $err_num, $err_str, $this->timeout);
 		stream_set_timeout($socket, $this->timeout);
-		
+
 		// Send the Challenge command
 		fwrite($socket, self::A2S_SERVERQUERY_GETCHALLENGE);
-		
+
 		// Discard the junk from the response and read the challenge number
 		fread($socket, 5);
 		$challenge = fread($socket, 4);
-		
+
 		if (empty($challenge))
 		{
 			$this->write_cache($host, $port, __METHOD__, 'FALSE');
 			return FALSE;
 		}
-		
+
 		// Send the command to get the player list
 		$command = self::A2S_PLAYER.$challenge;
 		fwrite($socket, $command);
-	
+
 		$response = fread($socket, self::PACKET_SIZE);
 		$response = substr($response, 6);
-		
+
 		fclose($socket);
-		
+
 		if ( ! empty($response))
 		{
 			$players = new StdClass();
 			if (ord(substr($response, 0, 1)) === 0)
 			{
 				$id = 0;
-				while($response !== false){
+				while($response !== false)
+				{
 					$this->get_byte($response); // First byte is supposed to be an id but seems to always be 0
 
 					$players->$id->name		= $this->get_string($response);
@@ -229,23 +240,25 @@ class Srcds_status {
 			{
 				$players = $this->sort_players($players, $sort_type, $sort);
 			}
-			
+
 			$this->write_cache($host, $port, __METHOD__, $players);
 			return $players;
 		}
-		
+
 		$this->write_cache($host, $port, __METHOD__, 'FALSE');
 		return FALSE;
 	}
-	
+
+	// ------------------------------------------------------------------------
+
 	/**
 	 * Write server responses to the cache if enabled
 	 *
-	 * @param string $host 
-	 * @param string $port 
-	 * @param string $method 
-	 * @param string $data 
-	 * @param int $ttl 
+	 * @param string $host
+	 * @param string $port
+	 * @param string $method
+	 * @param string $data
+	 * @param int $ttl
 	 * @return void
 	 * @author Joseph Wensley
 	 */
@@ -262,13 +275,15 @@ class Srcds_status {
 			}
 		}
 	}
-	
+
+	// ------------------------------------------------------------------------
+
 	/**
 	 * Read server responses from the cache if enabled
 	 *
-	 * @param string $host 
-	 * @param string $port 
-	 * @param string $method 
+	 * @param string $host
+	 * @param string $port
+	 * @param string $method
 	 * @return void
 	 * @author Joseph Wensley
 	 */
@@ -277,28 +292,30 @@ class Srcds_status {
 		if ($this->enable_cache === TRUE AND $this->cache_time > 0)
 		{
 			$key = $host.$port.$method;
-			
+
 			return $this->CI->cache->get($key);
 		}
 	}
-	
+
+	// ------------------------------------------------------------------------
+
 	/**
 	 * Sort Players
 	 *
-	 * Sorts players by kills or name in either descing or ascending order
-	 * 
-	 * @param string $players 
-	 * @param string $sort_type 
-	 * @param string $sort 
+	 * Sorts players by kills or name in either descending or ascending order
+	 *
+	 * @param string $players
+	 * @param string $sort_type
+	 * @param string $sort
 	 * @return object
 	 * @author Joseph Wensley
 	 */
 	public function sort_players($players, $sort_type = 'kills', $sort = 'desc')
 	{
 		if ( ! $players){ return FALSE; }
-		
-		$players = (array)$players;
-		
+
+		$players = (array)$players; // Players should be an object so cast it to as an array
+
 		switch ($sort_type)
 		{
 			case 'kills':
@@ -321,7 +338,7 @@ class Srcds_status {
 						break;
 				}
 				break;
-				
+
 			case 'time':
 				switch ($sort) {
 					case 'asc':
@@ -333,11 +350,12 @@ class Srcds_status {
 				}
 				break;
 		}
-		
+
 		return (object)$players;
 	}
 
-	
+	// ------------------------------------------------------------------------
+
 	/**
 	 * Sorting methods for use with usort()
 	 */
@@ -350,27 +368,29 @@ class Srcds_status {
 	{
 		return $b->kills - $a->kills;
 	}
-	
+
 	private function sort_players_by_name_asc($a, $b)
 	{
 		return strcasecmp($a->name, $b->name);
 	}
-	
+
 	private function sort_players_by_name_desc($a, $b)
 	{
 		return strcasecmp($b->name, $a->name);
 	}
-	
+
 	private function sort_players_by_time_asc($a, $b)
 	{
 		return $a->time - $b->time;
 	}
-	
+
 	private function sort_players_by_time_desc($a, $b)
 	{
 		return $b->time - $a->time;
 	}
-	
+
+	// ------------------------------------------------------------------------
+
 	/**
 	 * These functions unpack the binary data
 	 * recieved from the server into usable strings/numbers
@@ -379,7 +399,7 @@ class Srcds_status {
 	{
 		return chr($this->get_byte($string));
 	}
-	
+
 	private function get_byte(&$string)
 	{
 		$data = substr($string, 0, 1);
@@ -388,7 +408,7 @@ class Srcds_status {
 
 		return $data['value'];
 	}
-	
+
 	private function get_short_unsigned(&$string)
 	{
 		$data = substr($string, 0, 2);
@@ -431,7 +451,8 @@ class Srcds_status {
 		$byte = substr($string, 0, 1);
 		$string = substr($string, 1);
 
-		while (ord($byte) != "0"){
+		while (ord($byte) != "0")
+		{
 			$data .= $byte;
 			$byte = substr($string, 0, 1);
 			$string = substr($string, 1);
